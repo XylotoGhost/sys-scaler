@@ -1,0 +1,17 @@
+# build outputs
+*/build/
+sd/
+dist/
+*.nsp
+*.nso
+*.npdm
+*.elf
+*.nacp
+*.nro
+*.map
+*.lst
+
+# device results: keep only the notes (raw logs/EDID contain the monitor serial)
+results/**
+!results/*/
+!results/*/NOTES.md
