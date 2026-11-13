@@ -3,7 +3,7 @@
 # sets APP_TITLE / TARGET (and optionally CONFIG_JSON, EXTRA_LIBS, EXTRA_CFLAGS)
 # and includes this file. The version comes from ../VERSION.
 # Build from the repo root so common/ is visible, e.g.:
-#   docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:latest make
+#   docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:20260219 make
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -12,9 +12,10 @@ $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>/de
 endif
 
 TOPDIR ?= $(CURDIR)
+# Before switch_rules: it fills in "Unspecified Author" if this is still empty.
+APP_AUTHOR  := XylotoGhost
 include $(DEVKITPRO)/libnx/switch_rules
 
-APP_AUTHOR  ?= Moritz
 APP_VERSION := $(strip $(shell cat $(TOPDIR)/../VERSION))
 DEFINES     += -DSS_VERSION=\"$(APP_VERSION)\"
 

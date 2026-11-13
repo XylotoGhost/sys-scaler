@@ -1,9 +1,10 @@
 // Per-monitor profiles: what to do when a given monitor is connected.
 //
-// Key = CRC32 of the driver's mode DB for the connected display (derived from
-// the monitor EDID as seen through the dock), so a different monitor or TV
-// never matches. A profile is only written after the user confirmed the result
-// in the app.
+// Key = the timings in the driver's mode DB for the connected display (derived
+// from the monitor EDID as seen through the dock), so a different monitor or TV
+// never matches. Only the timings count: the key doesn't depend on the order of
+// the DB or on its flag and unknown fields. A profile is only written after the
+// user confirmed the result in the app.
 //
 // File: sdmc:/config/sys-scaler/profiles/<KEY>.ini
 //   name=PE160WUT           monitor name (display only)
@@ -12,7 +13,6 @@
 //   zoom=x,y,w,h            centered: vi magnification rect in 1920x1080 units
 //                           (scaled to the actual logical resolution at apply time)
 //   mode2=<15 u32 fields>   sharp: output mode, e.g. 1920x1200
-// Prototype files (method=zoom|mode, base=...) still load.
 #pragma once
 #include <switch.h>
 #include "nvdisp.h"

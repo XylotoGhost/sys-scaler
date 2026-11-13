@@ -14,8 +14,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <switch.h>
 
 #include "ui.h"
@@ -105,25 +103,8 @@ static u32     g_mon_keys[PROFILE_MAX];
 static Profile g_mon[PROFILE_MAX];
 static int     g_mon_n, g_mon_sel;
 
-static u64 nowMs(void) {
-    return armTicksToNs(armGetSystemTick()) / 1000000ULL;
-}
-
 // ---------------------------------------------------------------------------
 // state helpers
-
-static void refreshStatus(bool force) {
-    u64 t = nowMs();
-    if (!force && t - g_status_at < STATUS_MS) return;
-    g_status_at = t;
-    g_have_prof = g_hw.ready && profileLoad(g_hw.key, &g_prof);
-    g_svc_running = sysmodRunning();
-    g_svc_installed = sysmodInstalled();
-    g_boot = bootFlagGet();
-    g_have_live = g_hw.ready && hwLiveMode(&g_live);
-    u32 keys[PROFILE_MAX];
-    g_prof_count = profileList(keys, PROFILE_MAX);
-}
 
 static void updateSharp(void) {
     g_sharp_ok = hwFindSharp(shapeAr(g_draft_shape), &g_sharp_mode);
@@ -137,9 +118,26 @@ static void draftFromProfile(void) {
         g_draft_method = g_prof.method;
         if (g_prof.ar_w && g_prof.ar_h &&
             !arMatches(g_prof.ar_w, g_prof.ar_h, g_hw.ar_auto))
-            g_draft_shape = shapeFind(g_prof.ar_w, g_prof.ar_h);
+            g_draft_shape = shapeMatch((double)g_prof.ar_w / g_prof.ar_h);
     }
     updateSharp();
+}
+
+static void refreshStatus(bool force) {
+    u64 t = nowMs();
+    if (!force && t - g_status_at < STATUS_MS) return;
+    g_status_at = t;
+    // Follow the monitor: the mode DB read right at docking can be a transient one.
+    bool reinit = g_docked && hwStale();
+    if (reinit) hwInit(true);
+    g_have_prof = g_hw.ready && profileLoad(g_hw.key, &g_prof);
+    g_svc_running = sysmodRunning();
+    g_svc_installed = sysmodInstalled();
+    g_boot = bootFlagGet();
+    g_have_live = g_hw.ready && hwLiveMode(&g_live);
+    u32 keys[PROFILE_MAX];
+    g_prof_count = profileList(keys, PROFILE_MAX);
+    if (reinit) draftFromProfile();
 }
 
 static void saveSettings(void) {
@@ -241,7 +239,7 @@ static bool applyTest(void) {
 static void startWizard(void) {
     g_wizard = true;
     g_test = newProfile(PROFILE_CENTERED, g_hw.ar_auto);
-    zoomRectForPanel(g_hw.ar_auto, 1920, 1080, g_test.zoom);
+    zoomRectForPanel(g_hw.ar_auto, g_test.zoom);
     F("wizard: panel %s, zoom (%d,%d,%d,%d)\n", g_hw.ar_auto_name, g_test.zoom[0], g_test.zoom[1],
       g_test.zoom[2], g_test.zoom[3]);
     startPrep(PREP_ASK);
@@ -285,7 +283,7 @@ static void testExpert(void) {
         }
         g_test.mode = g_sharp_mode;
     } else {
-        zoomRectForPanel(ar, 1920, 1080, g_test.zoom);
+        zoomRectForPanel(ar, g_test.zoom);
     }
     startPrep(PREP_TEST);
 }
@@ -325,7 +323,7 @@ static void doForget(void) {
     draftFromProfile();
     loadMonitors();
     g_scr = g_mon_n && g_conf_key != g_hw.key ? SCR_MONITORS : SCR_MAIN;
-    if (g_conf_key == g_hw.key) hwZoomReset();
+    if (g_conf_key == g_hw.key) revertPicture();
 }
 
 static void doDeleteAll(void) {
@@ -333,7 +331,7 @@ static void doDeleteAll(void) {
     F("delete all profiles: %d\n", n);
     saveSettings();
     refreshStatus(true);
-    hwZoomReset();
+    revertPicture();
     char b[96];
     snprintf(b, sizeof(b), "Removed %d saved monitor%s.", n, n == 1 ? "" : "s");
     msg("Done", C_GOOD, b);
@@ -361,10 +359,11 @@ static void doDiag(void) {
     uiEnd();
     logClose();
     bool ok = diagExport();
-    logOpen(SS_APP_LOG, true);
+    logOpen(SS_APP_LOG, APP_LOG_MAX);
     F("diagnostics export: %s\n", ok ? "ok" : "failed");
-    if (ok) msg("Diagnostics saved", C_GOOD, "Saved to sdmc:/config/sys-scaler/diag/ (log.txt, edid.bin, "
-                "modedb2.bin). Attach these when reporting a problem.");
+    if (ok) msg("Diagnostics saved", C_GOOD, "Saved to sdmc:/config/sys-scaler/diag/. When reporting a "
+                "problem, attach the whole sdmc:/config/sys-scaler folder: it also holds the logs and your "
+                "settings. The monitor's serial number is left out.");
     else msg("Export failed", C_BAD, "Couldn't write to the SD card.");
 }
 
@@ -387,7 +386,7 @@ static void adjust(ItemId id, int dir) {
     case IT_ENABLED:
         g_set.enabled = !g_set.enabled;
         saveSettings();
-        if (!g_set.enabled) hwZoomReset();
+        if (!g_set.enabled) revertPicture();
         break;
     case IT_REFRESH: {
         int cur = 0;
@@ -413,7 +412,7 @@ static void adjust(ItemId id, int dir) {
 }
 
 static void activate(ItemId id) {
-    bool need_hw = id == IT_SETUP || id == IT_TEST || id == IT_FINETUNE || id == IT_FORGET;
+    bool need_hw = id == IT_SETUP || id == IT_TEST || id == IT_FINETUNE || id == IT_FORGET || id == IT_DIAG;
     if (need_hw && !g_hw.ready) {
         msg("Display not available", C_BAD, g_hw.error);
         return;
@@ -482,8 +481,10 @@ static int buildItems(Item *it) {
                         "Sharp: sends a signal in the monitor's own shape. Pixel-sharp, but the bar is only "
                         "at the bottom. Only for monitors taller than 16:9." :
                         "Off: leave this monitor alone.");
+            const Shape *sh = &g_shapes[g_draft_shape];
             if (g_draft_shape == 0) snprintf(v, sizeof(v), "Auto (%s)", g_hw.ar_auto_name);
-            else snprintf(v, sizeof(v), "%s", g_shapes[g_draft_shape].name);
+            else if (sh->hint) snprintf(v, sizeof(v), "%s (%s)", sh->name, sh->hint);
+            else snprintf(v, sizeof(v), "%s", sh->name);
             n = addItem(it, n, IT_SHAPE, "Monitor shape", v, true, C_SEL,
                         "Auto reads the shape from the monitor. Change it if the circle isn't round after "
                         "setup, e.g. when the monitor reports the wrong resolution.");
@@ -954,17 +955,10 @@ static void checkDock(void) {
     else if (g_scr != SCR_MSG && g_scr != SCR_CONFIRM) g_scr = SCR_MAIN;
 }
 
-static void openAppLog(void) {
-    struct stat st;
-    bool append = !(stat(SS_APP_LOG, &st) == 0 && st.st_size > APP_LOG_MAX);
-    logOpen(SS_APP_LOG, append);
-}
-
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     ssMkdirs();
-    logSetConsole(false);
-    openAppLog();
+    logOpen(SS_APP_LOG, APP_LOG_MAX);
     u32 hv = hosversionGet();
     F("\n=== " SS_NAME " app " SS_VERSION ", HOS %u.%u.%u ===\n", HOSVER_MAJOR(hv), HOSVER_MINOR(hv), HOSVER_MICRO(hv));
 
@@ -981,8 +975,6 @@ int main(int argc, char **argv) {
     pmdmntInitialize();
     pmshellInitialize();
 
-    int migrated = settingsMigrateLegacy();
-    if (migrated >= 0) F("first start: config.ini created, %d prototype profile(s) taken over\n", migrated);
     settingsLoad(&g_set);
 
     g_docked = appletGetOperationMode() == AppletOperationMode_Console;

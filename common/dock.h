@@ -1,10 +1,9 @@
 // DisplayPort-side info about the dock (DPCD over AUX via NVDISP_GET_PANEL_DATA).
 #pragma once
 #include <switch.h>
-#include "nvsession.h"
 
 typedef struct {
-    bool ok;
+    u8   raw[4][16];          // DPCD 0x000, 0x080, 0x100, 0x500 (zero if a read failed)
     u8   dpcd_rev;            // 0x12 = DP 1.2
     u8   link_rate, lanes;    // active link (0x14 = HBR2)
     u8   max_link_rate, max_lanes;
@@ -14,7 +13,7 @@ typedef struct {
     char branch_id[7];
 } DockInfo;
 
-// Reads DPCD 0x000, 0x080, 0x100, 0x500 on an open /dev/nvdisp-disp1 fd.
-// Raw bytes go to the log file; returns a decoded summary.
-void dockRead(NvSession *s, u32 disp1_fd, DockInfo *out);
-void dockLog(const DockInfo *d);   // one-screen summary
+// Reads and decodes the DPCD on an open /dev/nvdisp-disp1 fd.
+void dockRead(u32 disp1_fd, DockInfo *out);
+// Summary and raw bytes to the log.
+void dockLog(const DockInfo *d);

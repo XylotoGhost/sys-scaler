@@ -9,18 +9,19 @@
 // Framebuffer pixel = RGBA8888 in memory order R, G, B, A.
 #define RGB(r, g, b) ((u32)(r) | ((u32)(g) << 8) | ((u32)(b) << 16) | 0xFF000000u)
 
-// Nintendo extended font (shared font "NintendoExt").
-#define G_A     ""
-#define G_B     ""
-#define G_X     ""
-#define G_Y     ""
-#define G_L     ""
-#define G_R     ""
-#define G_ZL    ""
-#define G_ZR    ""
-#define G_DPAD  ""
-#define G_PLUS  ""
-#define G_MINUS ""
+// Button glyphs of the Nintendo extended font (shared font "NintendoExt"), as
+// escapes: the private-use characters themselves are invisible in most editors.
+#define G_A     "\uE0E0"
+#define G_B     "\uE0E1"
+#define G_X     "\uE0E2"
+#define G_Y     "\uE0E3"
+#define G_L     "\uE0E4"
+#define G_R     "\uE0E5"
+#define G_ZL    "\uE0E6"
+#define G_ZR    "\uE0E7"
+#define G_DPAD  "\uE0EA"
+#define G_PLUS  "\uE0EF"
+#define G_MINUS "\uE0F0"
 
 bool uiInit(void);
 void uiExit(void);
@@ -28,7 +29,6 @@ void uiBegin(u32 bg);
 void uiEnd(void);
 
 void uiFill(int x, int y, int w, int h, u32 c);
-void uiBlend(int x, int y, int w, int h, u32 c, u8 alpha);
 void uiRoundRect(int x, int y, int w, int h, int r, u32 c);
 void uiFrame(int x, int y, int w, int h, int t, u32 c);
 void uiRing(int cx, int cy, int r, int t, u32 c);     // anti-aliased circle outline

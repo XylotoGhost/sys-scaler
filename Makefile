@@ -1,6 +1,6 @@
 # Builds the app and the sysmodule, assembles the SD card layout in sd/ and
 # (make dist) a release zip in dist/.
-# Windows: docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:latest make dist
+# Windows: docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:20260219 make dist
 VERSION := $(strip $(shell cat VERSION))
 TID     := 420000000000A5F1
 APPS    := app sysmodule

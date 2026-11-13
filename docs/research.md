@@ -22,7 +22,7 @@ The Switch always outputs a 16:9 signal when docked (1920×1080 or 1280×720). M
 The panel shape comes from the EDID's native resolution, falling back to its physical size. Expert mode can override it.
 
 ## Device findings
-- **nvdisp access:** `/dev/nvdisp-disp1` needs NvDrvPermission bit 8, which only `nvdrv:s` and `nvdrv:t` have. The tools open their own `nvdrv:s` session ([nvsession.c](../common/nvsession.c)), because libnx's global session is already fixed to another service name.
+- **nvdisp access:** `/dev/nvdisp-disp1` needs NvDrvPermission bit 8, which only `nvdrv:s` and `nvdrv:t` have (run 1: `nvdrv` and `nvdrv:a` are denied). libnx picks one nv service per process, so both the sysmodule and the app set `__nx_nv_service_type` to `nvdrv:s` and use libnx's own `nvOpen`/`nvIoctl`. In the app that puts the framebuffer on `nvdrv:s` too; it needs only nvmap and nvhost-ctrl, which no permission bit gates.
 - **Mode struct order:** `hActive, vActive, hSyncWidth, vSyncWidth, hFrontPorch, vFrontPorch, hBackPorch, vBackPorch, pclkKHz, bpp, vmode, sync, unk1, reserved`. Current firmware uses the 60-byte `MODE2` ioctls: `0x803C021B` get, `0x403C021C` set, `0xC03C021D` validate, `0xEF20021E` mode DB.
   - `sync`: bit 0 = +H, bit 1 = +V.
   - `vmode`: 0x200000 = EDID DTD, 0x400000 = CEA, 0 = DMT.
@@ -32,7 +32,8 @@ The panel shape comes from the EDID's native resolution, falling back to its phy
 - **vi session:** an app's window already holds the "Default" display on libnx's vi session, and opening it twice fails with 0x1272. So magnification uses its own `vi:m` session ([vimag.c](../common/vimag.c)).
 - **vi accepts any rect,** including negative offsets and sizes bigger than the display. There's no getter.
 - **Things that reset the magnification:** the HOME menu starting after boot, and the power menu. Neither produces an event a sysmodule can see, so the zoom is re-sent every second (run 8). Sleep/wake, games, the HOME menu and redocking keep it.
-- **Docking passes through a temporary 720×480 state** with a different, 13-mode DB. The profile lookup therefore repeats until the real mode has settled (run 6).
+- **Docking passes through a temporary 720×480 state** with a different, 13-mode DB. The profile lookup therefore repeats until the real mode has settled (run 6), and the app re-reads the monitor whenever the DB changes.
+- **Monitor identity:** a profile is keyed by the timings in the driver's mode DB (a sum of per-mode CRCs), not by the raw DB bytes, so the DB's order and its flag and unknown fields don't matter.
 - **Docked or not:** `omm` `GetOperationMode` (cmd 0) is the reliable docked/handheld signal. disp1 going inactive can lag.
 - **System layers:** the spinning loading indicator is drawn on a layer that magnification doesn't affect, so it stays stretched with Centered.
 
@@ -45,6 +46,7 @@ The panel shape comes from the EDID's native resolution, falling back to its phy
 | 6 | Centered via sysmodule | works; stale pause file and missed lookups fixed |
 | 7 | 1 s re-send | undock/redock correct, no stutter |
 | 8 | re-send off | boot and power menu lose it → 1 s stays the default |
+| 9 | app 0.5.0 (UI, wizard) | works; finishing setup now also turns the fix on |
 
 ## Precedent and references
 - SaltyNX `saltysd_proc` changes the docked refresh rate with `GET_MODE2` → `VALIDATE_MODE2` → `SET_MODE2` on `/dev/nvdisp-disp1`.

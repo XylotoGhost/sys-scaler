@@ -2,16 +2,9 @@
 #include <stdio.h>
 #include "aspect.h"
 
-double panelAspect(const EdidInfo *e, const char *override_path, const char **src) {
+double panelAspect(const EdidInfo *e, const char **src) {
     const char *dummy;
     if (!src) src = &dummy;
-    u32 a = 0, b = 0;
-    FILE *f = override_path ? fopen(override_path, "r") : NULL;
-    if (f) {
-        bool ok = fscanf(f, "%u:%u", &a, &b) == 2 && a && b;
-        fclose(f);
-        if (ok) { *src = "override file"; return (double)a / b; }
-    }
     if (e && e->native_w && e->native_h) {
         *src = "EDID native resolution";
         return (double)e->native_w / e->native_h;
@@ -24,23 +17,44 @@ double panelAspect(const EdidInfo *e, const char *override_path, const char **sr
     return CONTENT_AR;
 }
 
-bool arMatches(u32 w, u32 h, double ar) {
-    if (!w || !h || ar <= 0) return false;
-    return fabs((double)w / h / ar - 1.0) < 0.01;
+const Shape g_shapes[] = {
+    { 0, 0, "Auto", NULL },
+    { 16, 10, "16:10", NULL },
+    { 3, 2, "3:2", NULL },
+    { 4, 3, "4:3", NULL },
+    { 5, 4, "5:4", NULL },
+    { 64, 27, "21:9", "2560 × 1080" },
+    { 43, 18, "21:9", "3440 × 1440" },
+    { 32, 9, "32:9", NULL },
+    { 16, 9, "16:9", "no fix" },
+};
+const int g_num_shapes = sizeof(g_shapes) / sizeof(g_shapes[0]);
+
+int shapeMatch(double ar) {
+    int best = 0;
+    double best_err = 0.01;
+    for (int i = 1; i < g_num_shapes; i++) {
+        double err = fabs(ar / ((double)g_shapes[i].w / g_shapes[i].h) - 1.0);
+        if (err < best_err) { best = i; best_err = err; }
+    }
+    return best;
 }
 
 void arName(double ar, char *buf, size_t n) {
-    static const struct { u32 a, b; const char *name; } known[] = {
-        {16, 9, "16:9"}, {16, 10, "16:10"}, {4, 3, "4:3"}, {5, 4, "5:4"}, {3, 2, "3:2"},
-        {64, 27, "21:9 (64:27)"}, {43, 18, "21:9 (43:18)"}, {12, 5, "21:9 (12:5)"}, {32, 9, "32:9"},
-    };
-    for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
-        if (fabs(ar / ((double)known[i].a / known[i].b) - 1.0) < 0.01) {
-            snprintf(buf, n, "%s", known[i].name);
-            return;
-        }
-    }
-    snprintf(buf, n, "%.3f:1", ar);
+    int i = shapeMatch(ar);
+    if (i) snprintf(buf, n, "%s", g_shapes[i].name);
+    else snprintf(buf, n, "%.3f:1", ar);
+}
+
+void arToFraction(double ar, u32 *w, u32 *h) {
+    int i = shapeMatch(ar);
+    *w = i ? g_shapes[i].w : (u32)lround(ar * 1000);
+    *h = i ? g_shapes[i].h : 1000;
+}
+
+bool arMatches(u32 w, u32 h, double ar) {
+    if (!w || !h || ar <= 0) return false;
+    return fabs((double)w / h / ar - 1.0) < 0.01;
 }
 
 static u32 even(double v) { return (u32)(v / 2.0 + 0.5) * 2; }
@@ -58,15 +72,9 @@ Rect fitPrecompensated(double panel_ar, u32 sig_w, u32 sig_h) {
     return r;
 }
 
-void zoomRectForPanel(double panel_ar, s32 lw, s32 lh, s32 out[4]) {
-    Rect r = fitPrecompensated(panel_ar, (u32)lw, (u32)lh);
-    // logical (0,0,lw,lh) must land on r: lw * lw / mw = r.w, -mx * lw / mw = r.x
-    double mw = (double)lw * lw / r.w;
-    double mh = (double)lh * lh / r.h;
-    out[0] = (s32)lround(-(double)r.x * mw / lw);
-    out[1] = (s32)lround(-(double)r.y * mh / lh);
-    out[2] = (s32)lround(mw);
-    out[3] = (s32)lround(mh);
+void zoomRectForPanel(double panel_ar, s32 out[4]) {
+    Rect r = fitPrecompensated(panel_ar, 1920, 1080);
+    zoomFromImage(&r, out);
 }
 
 void zoomToLogical(const s32 ref[4], s32 lw, s32 lh, s32 out[4]) {
@@ -99,14 +107,6 @@ Rect zoomToImage(const s32 z[4]) {
 
 bool is16x9(u32 w, u32 h) {
     return w && h && w * 9 == h * 16;
-}
-
-Rect fitNative(u32 out_w, u32 out_h) {
-    double s = fmin(out_w / 1920.0, out_h / 1080.0);
-    Rect r = { 0, 0, even(1920 * s), even(1080 * s) };
-    r.x = (out_w - r.w) / 2;
-    r.y = (out_h - r.h) / 2;
-    return r;
 }
 
 void idealNativeMode(double panel_ar, u32 *w, u32 *h) {

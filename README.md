@@ -9,7 +9,7 @@ When docked, the Switch always outputs 16:9, and most 16:10, 4:3 or ultrawide mo
 - Works with taller monitors (16:10, 3:2, 4:3, 5:4: bars top and bottom) and wider ones (21:9, 32:9: bars left and right).
 - Safe to try: every change shows a 15-second countdown and reverts unless you confirm it. Handheld mode is never affected.
 
-> Status: early release (v0.5). Tested on an original Switch (HOS 23.0.1, Atmosphère 1.12.1) with the official dock and a 16:10 monitor. Reports from other monitors, especially ultrawides, are very welcome.
+> Status: early release (v0.6). Tested on an original Switch (HOS 23.0.1, Atmosphère 1.12.1) with the official dock and a 16:10 monitor. Reports from other monitors, especially ultrawides, are very welcome.
 
 ## Requirements
 - A Switch running [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere) custom firmware.
@@ -42,7 +42,7 @@ To update, do the same. Your settings in `sdmc:/config/sys-scaler/` are kept.
 | Re-send interval | How often the fix is re-applied (default 1 s; the system resets it after boot and in the power menu). |
 | Start at boot / Background service | Atmosphère boot2 flag; start or restart the service. |
 | Saved monitors | List and delete saved monitors. |
-| Export diagnostics | Writes monitor and dock details to `sdmc:/config/sys-scaler/diag/` for bug reports. |
+| Export diagnostics | Writes monitor and dock details to `sdmc:/config/sys-scaler/diag/`, without the monitor's serial number. For a bug report, attach the whole `config/sys-scaler` folder. |
 
 ## Good to know
 - **Picture quality:** Centered scales the picture slightly, so it's a bit softer than native. Sharp is pixel-exact but not centered.
@@ -59,7 +59,7 @@ To update, do the same. Your settings in `sdmc:/config/sys-scaler/` are kept.
 ## Build
 Needs Docker. From the repo root:
 ```sh
-docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:latest make dist
+docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:20260219 make dist
 ```
 This produces `sd/` (the SD card layout) and `dist/sys-scaler-vX.Y.Z.zip`. GitHub Actions builds every push and attaches the zip to tagged releases (`v*`).
 
@@ -67,7 +67,7 @@ This produces `sd/` (the SD card layout) and `dist/sys-scaler-vX.Y.Z.zip`. GitHu
 |---|---|
 | `app/` | The sys-scaler app (.nro): UI, setup wizard, diagnostics |
 | `sysmodule/` | Background service (title ID `420000000000A5F1`) |
-| `common/` | Shared code: nvdrv/nvdisp access, vi magnification, EDID, aspect math, profiles, settings |
+| `common/` | Shared code: nvdisp ioctls, vi magnification, EDID, aspect math, profiles, settings |
 | `docs/research.md` | How it works, and the device findings behind it |
 | `results/` | Notes from each device test run |
 

@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <string.h>
-#include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include "settings.h"
@@ -41,8 +40,8 @@ bool settingsSave(Settings *s) {
     fprintf(f, "refresh=%d\n", s->refresh_s);
     fprintf(f, "expert=%d\n", s->expert ? 1 : 0);
     fprintf(f, "rev=%u\n", s->rev);
-    fclose(f);
-    return true;
+    bool ok = !ferror(f);
+    return fclose(f) == 0 && ok;
 }
 
 u32 settingsFileCrc(void) {
@@ -58,45 +57,6 @@ void ssMkdirs(void) {
     mkdir("sdmc:/config", 0777);
     mkdir(SS_DIR, 0777);
     mkdir(SS_PROFILE_DIR, 0777);
-}
-
-static bool copyFile(const char *from, const char *to) {
-    FILE *in = fopen(from, "rb");
-    if (!in) return false;
-    FILE *out = fopen(to, "wb");
-    if (!out) { fclose(in); return false; }
-    char buf[512];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
-    fclose(in);
-    fclose(out);
-    return true;
-}
-
-int settingsMigrateLegacy(void) {
-    if (fileExists(SS_CONFIG)) return -1;
-    ssMkdirs();
-    Settings s;
-    settingsDefaults(&s);
-    int n = 0;
-    DIR *d = opendir(SS_LEGACY_DIR "/profiles");
-    if (d) {
-        struct dirent *e;
-        unsigned key;
-        char from[320], to[320];
-        while ((e = readdir(d))) {
-            if (sscanf(e->d_name, "%8X.txt", &key) != 1) continue;
-            snprintf(from, sizeof(from), SS_LEGACY_DIR "/profiles/%s", e->d_name);
-            snprintf(to, sizeof(to), SS_PROFILE_DIR "/%08X.ini", key);
-            if (!fileExists(to) && copyFile(from, to)) n++;
-        }
-        closedir(d);
-    }
-    if (fileExists(SS_LEGACY_DIR "/disabled")) s.enabled = false;
-    // refresh.txt from the prototype is deliberately not taken over: run 8 showed
-    // that 0 breaks the fix after boot and the power menu.
-    settingsSave(&s);
-    return n;
 }
 
 bool fileExists(const char *path) {

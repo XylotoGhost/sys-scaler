@@ -1,7 +1,7 @@
 // Paths and the global settings file shared by the app and the sysmodule.
 //
 // sdmc:/config/sys-scaler/
-//   config.ini        global settings (this file)
+//   config.ini        global settings (this file); defaults apply while it's missing
 //   profiles/*.ini    one per monitor (see profile.h)
 //   pause             exists while the app runs a test; holds the app's pid
 //   log.txt           sysmodule log
@@ -25,7 +25,6 @@
 #define SS_DIAG_DIR    SS_DIR "/diag"
 #define SS_CONTENT_DIR "sdmc:/atmosphere/contents/420000000000A5F1"
 #define SS_BOOT_FLAG   SS_CONTENT_DIR "/flags/boot2.flag"
-#define SS_LEGACY_DIR  "sdmc:/aspectfix"   // prototype (AspectFix 0.x)
 
 #define REFRESH_DEFAULT 1
 
@@ -39,13 +38,9 @@ typedef struct {
 void settingsDefaults(Settings *s);
 bool settingsLoad(Settings *s);     // false if missing (s then holds defaults)
 bool settingsSave(Settings *s);     // bumps s->rev
-u32  settingsFileCrc(void);         // CRC of config.ini's contents, 0 if missing
+u32  settingsFileCrc(void);         // CRC of config.ini's contents (always odd), 0 if missing
 
 void ssMkdirs(void);
-// First start only (no config.ini yet): copies prototype profiles from
-// sdmc:/aspectfix/profiles and its `disabled` switch. Returns the number of
-// profiles copied, or -1 if config.ini already existed.
-int  settingsMigrateLegacy(void);
 
 bool fileExists(const char *path);
 bool touchFile(const char *path);

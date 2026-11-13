@@ -6,15 +6,14 @@
 #include "dock.h"
 #include "edid.h"
 #include "nvdisp.h"
-#include "nvsession.h"
 #include "profile.h"
 
 typedef struct {
-    bool        docked;        // hwInit ran in docked mode
     bool        ready;         // display access works (nvdrv:s, disp1, mode DB)
     char        error[96];     // why not ready
+    u8          edid_raw[sizeof(SetSysEdid)];   // serial number blanked
+    size_t      edid_len;      // 0 = no EDID
     EdidInfo    edid;
-    bool        have_edid;
     double      ar_auto;       // panel aspect from the EDID
     char        ar_auto_name[24];
     u32         key;           // profile key of the connected monitor
@@ -28,9 +27,12 @@ extern Hw g_hw;
 
 void hwInit(bool docked);
 void hwExit(void);
+// true if hwInit should run again: display access isn't ready, or the mode DB
+// no longer gives g_hw.key. Docking passes through a transient DB (run 6), and
+// the monitor can be swapped while docked.
+bool hwStale(void);
 
 bool   hwLiveMode(NvdcMode2 *m);
-bool   hwIsStock(const NvdcMode2 *m);
 Result hwSetMode(const NvdcMode2 *m);         // validates first
 void   hwRestoreStock(void);                  // back to 1080p if something else is live
 // Best "sharp" output mode for a panel aspect (>= 1920x1080, within the dock's
@@ -41,13 +43,8 @@ bool   hwFindSharp(double ar, NvdcMode2 *out);
 Result hwZoomSet(const s32 ref[4]);   // reference units (1920x1080)
 Result hwZoomReset(void);
 
-// Monitor shape choices (Expert). Index 0 = Auto (EDID).
-typedef struct { u32 w, h; const char *name; } Shape;
-extern const Shape g_shapes[];
-extern const int   g_num_shapes;
-double shapeAr(int idx);              // idx 0 = auto
-int    shapeFind(u32 w, u32 h);       // index for a stored aspect, 0 if none
-void   arToFraction(double ar, u32 *w, u32 *h);
+// Aspect for a monitor shape choice (index into g_shapes, 0 = auto from the EDID).
+double shapeAr(int idx);
 
 // Background service (sysmodule).
 bool   sysmodRunning(void);

@@ -8,14 +8,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: devkitpro/devkita64:latest
+    container: devkitpro/devkita64:20260219
     steps:
       - uses: actions/checkout@v4
+
+      - name: Tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
 
       - name: Build
         run: make dist
@@ -25,9 +29,18 @@ jobs:
           name: sys-scaler
           path: dist/*.zip
 
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: dist/*.zip
+          name: sys-scaler
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: '*.zip'
           generate_release_notes: true

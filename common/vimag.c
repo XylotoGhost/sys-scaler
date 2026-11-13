@@ -1,5 +1,6 @@
 #include <string.h>
 #include "vimag.h"
+#include "aspect.h"
 
 typedef struct { char data[0x40]; } ViName;
 
@@ -12,9 +13,8 @@ static Result openDisplay(ViMag *v, const char *name) {
     return rc;
 }
 
-Result vimagOpen(ViMag *v, Result *first_rc) {
+Result vimagOpen(ViMag *v) {
     memset(v, 0, sizeof(*v));
-    if (first_rc) *first_rc = 0;
 
     Result rc = smGetService(&v->root, "vi:m");
     if (R_FAILED(rc)) return rc;
@@ -28,10 +28,7 @@ Result vimagOpen(ViMag *v, Result *first_rc) {
     if (R_FAILED(rc)) { serviceClose(&v->app); serviceClose(&v->root); return rc; }
 
     rc = openDisplay(v, "Default");
-    if (R_FAILED(rc)) {
-        if (first_rc) *first_rc = rc;
-        rc = openDisplay(v, "External");
-    }
+    if (R_FAILED(rc)) rc = openDisplay(v, "External");
     if (R_FAILED(rc)) {
         serviceClose(&v->sys); serviceClose(&v->app); serviceClose(&v->root);
         return rc;
@@ -49,14 +46,20 @@ void vimagClose(ViMag *v) {
     v->open = false;
 }
 
-Result vimagGetLogicalResolution(ViMag *v, s32 *w, s32 *h) {
-    struct { s32 w, h; } out = {0};
-    Result rc = serviceDispatchInOut(&v->sys, 1203, v->display_id, out);
-    if (R_SUCCEEDED(rc)) { *w = out.w; *h = out.h; }
-    return rc;
-}
+Result vimagSetRef(ViMag *v, const s32 ref[4], s32 sent[4]) {
+    Result rc = v->open ? 0 : vimagOpen(v);
+    if (R_FAILED(rc)) return rc;
 
-Result vimagSet(ViMag *v, s32 x, s32 y, s32 w, s32 h) {
-    const struct { s32 x, y, w, h; u64 display_id; } in = { x, y, w, h, v->display_id };
+    // GetDisplayLogicalResolution; the reference size stands in if it fails.
+    struct { s32 w, h; } res = {0};
+    s32 lw = 1920, lh = 1080;
+    if (R_SUCCEEDED(serviceDispatchInOut(&v->sys, 1203, v->display_id, res))) { lw = res.w; lh = res.h; }
+
+    s32 z[4];
+    zoomToLogical(ref, lw, lh, z);
+    if (sent) memcpy(sent, z, sizeof(z));
+
+    // SetDisplayMagnification
+    const struct { s32 x, y, w, h; u64 display_id; } in = { z[0], z[1], z[2], z[3], v->display_id };
     return serviceDispatchIn(&v->sys, 1204, in);
 }

@@ -140,11 +140,6 @@ void uiFill(int x, int y, int w, int h, u32 c) {
     }
 }
 
-void uiBlend(int x, int y, int w, int h, u32 c, u8 alpha) {
-    for (int yy = y; yy < y + h; yy++)
-        for (int xx = x; xx < x + w; xx++) plot(xx, yy, c, alpha);
-}
-
 void uiRoundRect(int x, int y, int w, int h, int r, u32 c) {
     if (r * 2 > h) r = h / 2;
     for (int yy = 0; yy < h; yy++) {
