@@ -75,3 +75,6 @@ This produces `sd/` (the SD card layout) and `dist/sys-scaler-vX.Y.Z.zip`. GitHu
 Built on [libnx](https://github.com/switchbrew/libnx) and the research of the [switchbrew](https://switchbrew.org) wiki. Mode switching follows the approach of [SaltyNX](https://github.com/masagrator/SaltyNX)'s display refresh-rate code.
 
 This project isn't affiliated with Nintendo.
+
+## License
+GPL-2.0, see [LICENSE](LICENSE).
