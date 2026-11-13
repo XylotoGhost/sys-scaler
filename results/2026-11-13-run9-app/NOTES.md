@@ -8,7 +8,7 @@ Screenshots (captured before magnification, so the circle looks round in them):
 - The wizard screens look as designed.
 
 Logs:
-- The sysmodule's first start reported "0 prototype profile(s) taken over". `sdmc:/aspectfix` was probably already deleted; the profile was recreated by the setup anyway.
+- The sysmodule's first start reported "0 prototype profile(s) taken over". That was correct: Moritz had already deleted `sdmc:/aspectfix`. The copy-over itself remains untested on device.
 - `enabled` was switched off while still in handheld (rev 2), then toggled on and off several times while docked. It ended at `enabled=0`.
 - The setup wizard saved the profile but left `enabled=0`. The app's test zoom stayed on screen, and the disabled service never reset it, because its own zoom wasn't active. So the picture looked fixed while the menu correctly said "Turned off", and after a reboot nothing would apply.
 
