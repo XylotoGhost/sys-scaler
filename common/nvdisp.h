@@ -14,7 +14,7 @@
 #define NVDISP_GET_PANEL_DATA           0xC01C0226u // DPAUX access, used by SaltyNX with cmd 6 = read
 
 // Mode2 struct (60 bytes), used by current firmware and SaltyNX.
-// Field meanings decoded from GET_MODE_DB2 on HOS 23.0.1 (results/2026-11-12-run1):
+// Field meanings decoded from GET_MODE_DB2 on HOS 23.0.1:
 //   sync:  bit0 = HSync positive, bit1 = VSync positive (640x480 -> 0, DMT RB +H-V -> 1)
 //   vmode: 0x200000 = EDID detailed timing, 0x400000 = CEA VIC, 0x80 = est./GTF, 0 = DMT;
 //          VALIDATE_MODE2 returns 0x8000000 on success.

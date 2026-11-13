@@ -28,8 +28,8 @@ extern Hw g_hw;
 void hwInit(bool docked);
 void hwExit(void);
 // true if hwInit should run again: display access isn't ready, or the mode DB
-// no longer gives g_hw.key. Docking passes through a transient DB (run 6), and
-// the monitor can be swapped while docked.
+// no longer gives g_hw.key. Docking passes through a transient DB, and the
+// monitor can be swapped while docked.
 bool hwStale(void);
 
 bool   hwLiveMode(NvdcMode2 *m);

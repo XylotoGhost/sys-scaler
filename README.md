@@ -68,8 +68,7 @@ This produces `sd/` (the SD card layout) and `dist/sys-scaler-vX.Y.Z.zip`. GitHu
 | `app/` | The sys-scaler app (.nro): UI, setup wizard, diagnostics |
 | `sysmodule/` | Background service (title ID `420000000000A5F1`) |
 | `common/` | Shared code: nvdisp ioctls, vi magnification, EDID, aspect math, profiles, settings |
-| `docs/research.md` | How it works, and the device findings behind it |
-| `results/` | Notes from each device test run |
+| `docs/how-it-works.md` | How it works, and the findings behind it |
 
 ## Credits
 Built on [libnx](https://github.com/switchbrew/libnx) and the research of the [switchbrew](https://switchbrew.org) wiki. Mode switching follows the approach of [SaltyNX](https://github.com/masagrator/SaltyNX)'s display refresh-rate code.

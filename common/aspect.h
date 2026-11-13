@@ -38,7 +38,7 @@ Rect fitPrecompensated(double panel_ar, u32 sig_w, u32 sig_h);
 // reference units, mapped onto the whole display) that draws the 16:9 image
 // exactly at fitPrecompensated(panel_ar, 1920, 1080). 16:10 -> (0, -60, 1920, 1200).
 // Confirmed on device: vi accepts negative x/y and maps non-uniformly; it clips
-// to the display it set (run 5).
+// to the display it set.
 void zoomRectForPanel(double panel_ar, s32 out[4]);
 
 // Profiles store the zoom rect in 1920x1080 reference units; this scales it to

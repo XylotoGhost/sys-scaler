@@ -62,7 +62,7 @@ u32 __nx_fs_num_sessions = 1;
 u32 __nx_nv_service_type = NvServiceType_System;
 u32 __nx_nv_transfermem_size = 0x8000;
 
-#define INNER_HEAP_SIZE 0x20000   // measured peak on device: 44 KB (run 10)
+#define INNER_HEAP_SIZE 0x20000   // measured peak on device: 44 KB
 void __libnx_initheap(void) {
     static char inner_heap[INNER_HEAP_SIZE];
     extern char *fake_heap_start;

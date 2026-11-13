@@ -7,7 +7,7 @@
 
 // FNV-1a over a mode's timing, byte by byte. Plain arithmetic on purpose: libnx's
 // crc32Calculate reads its input through u64 pointers, which is undefined for a
-// local u32 array, and GCC then hashes uninitialised stack instead (0.6.0 did).
+// local u32 array: GCC then hashes uninitialised stack instead.
 static u32 timingHash(const NvdcMode2 *m) {
     const u32 timing[9] = { m->hActive, m->vActive, m->hSyncWidth, m->vSyncWidth, m->hFrontPorch,
                             m->vFrontPorch, m->hBackPorch, m->vBackPorch, m->pclkKHz };
