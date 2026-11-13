@@ -31,6 +31,16 @@ Rect fitPrecompensated(double panel_ar, u32 sig_w, u32 sig_h);
 // non-uniformly; it clips to the display it set (run 5).
 void zoomRectForPanel(double panel_ar, s32 lw, s32 lh, s32 out[4]);
 
+// Profiles store the zoom rect in 1920x1080 reference units; this scales it to
+// the display's actual logical resolution (e.g. 1280x720).
+void zoomToLogical(const s32 ref[4], s32 lw, s32 lh, s32 out[4]);
+// Image rect on screen <-> zoom rect, both in reference units (fine-tuning).
+void zoomFromImage(const Rect *img, s32 out[4]);
+Rect zoomToImage(const s32 z[4]);
+
+// 16:9 output mode (1920x1080, 1280x720): the centered fix applies.
+bool is16x9(u32 w, u32 h);
+
 // Approach B: the signal itself has the panel's aspect (out_w x out_h). Returns
 // the largest centered 16:9 rect (1:1 with a 1920x1080 game when it fits).
 Rect fitNative(u32 out_w, u32 out_h);

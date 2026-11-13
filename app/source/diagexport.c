@@ -1,30 +1,26 @@
-// AspectFix Diag: read-only diagnostic for the docked aspect-ratio project.
-// The panel aspect is taken from the EDID (or sdmc:/aspectfix/aspect.txt), so
-// it works for 16:10, 4:3, 21:9, ... panels, not just 16:10.
+// Diagnostics export (Expert): the read-only checks of the prototype's diag app.
+// Writes sdmc:/config/sys-scaler/diag/log.txt plus raw dumps (edid.bin, modedb2.bin).
 //
-// It never calls SET_MODE / SET_MODE2 / FLIP / GET_WINDOW and never writes settings.
-// The only call that hands the driver a new timing is VALIDATE_MODE2, which is
-// opt-in (A button) and is followed by a check that the live mode did not change.
-//
-// Output: sdmc:/aspectfix/log.txt plus raw dumps (edid_setsys.bin, modedb2.bin, ...)
+// It never calls SET_MODE2 and never writes settings. The only call that hands
+// the driver a timing is VALIDATE_MODE2, followed by a check that the live mode
+// did not change (confirmed harmless on device, run 1).
 
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <switch.h>
 
+#include "diagexport.h"
 #include "log.h"
 #include "edid.h"
 #include "aspect.h"
 #include "dock.h"
 #include "nvsession.h"
 #include "nvdisp.h"
+#include "settings.h"
 
-#define APP_VERSION "0.3.0"
-#define OUT_DIR     "sdmc:/aspectfix"
-#define NV_TMEM     0x100000
-
-static PadState g_pad;
+#define OUT_DIR SS_DIAG_DIR
+#define NV_TMEM 0x100000
 
 static NvdcModeDB2 g_db2;   // 12 KB, keep off the stack
 static EdidInfo    g_edid;
@@ -34,21 +30,8 @@ static double      g_panel_ar = CONTENT_AR;
 static char        g_panel_ar_name[24] = "16:9";
 static const char *g_panel_ar_src = "default (no EDID)";
 
-// ---------------------------------------------------------------------------
-// helpers
-
 static void section(const char *title) {
     L("\n== %s ==\n", title);
-}
-
-static u64 waitButtons(u64 mask) {
-    while (appletMainLoop()) {
-        padUpdate(&g_pad);
-        u64 k = padGetButtonsDown(&g_pad);
-        if (k & mask) return k;
-        consoleUpdate(NULL);
-    }
-    return 0;
 }
 
 static void logMode1(const char *label, const NvdcMode *m) {
@@ -122,7 +105,7 @@ static void edidFromSettings(void) {
     size_t blocks = 1 + g_edid_raw[126];
     size_t len = blocks * 128;
     if (len > sizeof(g_edid_raw)) len = sizeof(g_edid_raw);
-    writeFile(OUT_DIR "/edid_setsys.bin", g_edid_raw, len);
+    writeFile(OUT_DIR "/edid.bin", g_edid_raw, len);
     logHex("edid_setsys", g_edid_raw, len);
     edidParse(g_edid_raw, len, &g_edid);
 }
@@ -130,10 +113,9 @@ static void edidFromSettings(void) {
 // Panel aspect: manual override file > EDID native resolution > EDID physical size > 16:9.
 static void decidePanelAspect(void) {
     section("Panel aspect");
-    g_panel_ar = panelAspect(&g_edid, OUT_DIR "/aspect.txt", &g_panel_ar_src);
+    g_panel_ar = panelAspect(&g_edid, NULL, &g_panel_ar_src);
     arName(g_panel_ar, g_panel_ar_name, sizeof(g_panel_ar_name));
     L("  %s (%.4f), from %s\n", g_panel_ar_name, g_panel_ar, g_panel_ar_src);
-    L("  (Put e.g. \"16:10\" or \"21:9\" in %s/aspect.txt to override.)\n", OUT_DIR);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,15 +319,7 @@ static void validateTests(NvSession *s, DispState *st) {
         addCand("CVT-RB", &m);
     }
 
-    L("  %d candidate timings. VALIDATE_MODE2 only asks the driver whether it would\n"
-      "  accept a mode; it is not supposed to change the output. Worst case if it\n"
-      "  does: black screen -> undock or hold POWER to reboot.\n\n"
-      "  Press A to run the tests, B to skip.\n", g_ncand);
-    u64 k = waitButtons(HidNpadButton_A | HidNpadButton_B);
-    if (!(k & HidNpadButton_A)) {
-        L("  Skipped by user.\n");
-        return;
-    }
+    L("  %d candidate timings (VALIDATE_MODE2 only; the live mode is checked after).\n", g_ncand);
 
     u32 fd = 0;
     Result rc = nvsDevOpen(s, "/dev/nvdisp-disp1", &fd);
@@ -446,18 +420,10 @@ static void summary(bool disp_access, const DispState *st) {
 
 // ---------------------------------------------------------------------------
 
-int main(int argc, char **argv) {
-    (void)argc; (void)argv;
-    consoleInit(NULL);
-    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-    padInitializeDefault(&g_pad);
-
+bool diagExport(void) {
     mkdir(OUT_DIR, 0777);
-    bool logged = logOpen(OUT_DIR "/log.txt", false);
-    L("AspectFix Diag " APP_VERSION " - read-only display diagnostic\n");
-    L("Log: %s\n", logged ? OUT_DIR "/log.txt" : "COULD NOT OPEN (SD card?)");
-
-    setsysInitialize();
+    if (!logOpen(OUT_DIR "/log.txt", false)) return false;
+    L(SS_NAME " " SS_VERSION " diagnostics\n");
     systemInfo();
     edidFromSettings();
     decidePanelAspect();
@@ -477,13 +443,8 @@ int main(int argc, char **argv) {
     } else {
         L("\nnvdrv:s unavailable (0x%x); skipping display queries.\n", rc);
     }
-
     summary(disp_access, &st);
-    setsysExit();
-
-    L("\nDone. Send %s/log.txt and the .bin files. Press + to exit.\n", OUT_DIR);
+    L("\nDone.\n");
     logClose();
-    waitButtons(HidNpadButton_Plus);
-    consoleExit(NULL);
-    return 0;
+    return true;
 }

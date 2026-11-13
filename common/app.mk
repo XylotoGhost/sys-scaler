@@ -1,8 +1,9 @@
 #---------------------------------------------------------------------------------
-# Shared libnx .nro build rules (devkitPro switch template). Each app's Makefile
-# sets APP_TITLE / APP_VERSION / TARGET and includes this file.
+# Shared libnx build rules (devkitPro switch template). Each app's Makefile
+# sets APP_TITLE / TARGET (and optionally CONFIG_JSON, EXTRA_LIBS, EXTRA_CFLAGS)
+# and includes this file. The version comes from ../VERSION.
 # Build from the repo root so common/ is visible, e.g.:
-#   docker run --rm -v "${PWD}:/src" -w /src/diag devkitpro/devkita64:latest make
+#   docker run --rm -v "${PWD}:/src" -w /src devkitpro/devkita64:latest make
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -13,7 +14,9 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libnx/switch_rules
 
-APP_AUTHOR ?= Moritz
+APP_AUTHOR  ?= Moritz
+APP_VERSION := $(strip $(shell cat $(TOPDIR)/../VERSION))
+DEFINES     += -DSS_VERSION=\"$(APP_VERSION)\"
 
 BUILD    := build
 SOURCES  := source ../common
@@ -23,12 +26,12 @@ INCLUDES := include ../common
 ARCH     := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
 CFLAGS   := -g -Wall -Wextra -Wno-unused-parameter -O2 -ffunction-sections $(ARCH) $(DEFINES)
-CFLAGS   += $(INCLUDE) -D__SWITCH__
+CFLAGS   += $(INCLUDE) -D__SWITCH__ $(EXTRA_CFLAGS)
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS     := -lnx -lm
+LIBS     := $(EXTRA_LIBS) -lnx -lm
 LIBDIRS  := $(PORTLIBS) $(LIBNX)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -63,7 +66,7 @@ ifneq ($(strip $(CONFIG_JSON)),)
 # Sysmodule: build an ExeFS (.nsp) with an NPDM from the JSON.
 export APP_JSON := $(CURDIR)/$(CONFIG_JSON)
 else
-export APP_ICON := $(LIBNX)/default_icon.jpg
+export APP_ICON := $(if $(wildcard $(CURDIR)/icon.jpg),$(CURDIR)/icon.jpg,$(LIBNX)/default_icon.jpg)
 export NROFLAGS += --icon=$(APP_ICON) --nacp=$(CURDIR)/$(TARGET).nacp
 endif
 

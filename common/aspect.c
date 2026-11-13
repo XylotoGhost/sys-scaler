@@ -69,6 +69,38 @@ void zoomRectForPanel(double panel_ar, s32 lw, s32 lh, s32 out[4]) {
     out[3] = (s32)lround(mh);
 }
 
+void zoomToLogical(const s32 ref[4], s32 lw, s32 lh, s32 out[4]) {
+    out[0] = (s32)lround((double)ref[0] * lw / 1920.0);
+    out[1] = (s32)lround((double)ref[1] * lh / 1080.0);
+    out[2] = (s32)lround((double)ref[2] * lw / 1920.0);
+    out[3] = (s32)lround((double)ref[3] * lh / 1080.0);
+}
+
+// vi maps the zoom rect (x,y,w,h) onto the whole 1920x1080 display, so the
+// logical screen lands at img.x = -x * 1920 / w, img.w = 1920 * 1920 / w.
+void zoomFromImage(const Rect *img, s32 out[4]) {
+    double mw = 1920.0 * 1920.0 / img->w, mh = 1080.0 * 1080.0 / img->h;
+    out[0] = (s32)lround(-(double)img->x * mw / 1920.0);
+    out[1] = (s32)lround(-(double)img->y * mh / 1080.0);
+    out[2] = (s32)lround(mw);
+    out[3] = (s32)lround(mh);
+}
+
+Rect zoomToImage(const s32 z[4]) {
+    Rect r = { 0, 0, 1920, 1080 };
+    if (z[2] <= 0 || z[3] <= 0) return r;
+    r.w = (u32)lround(1920.0 * 1920.0 / z[2]);
+    r.h = (u32)lround(1080.0 * 1080.0 / z[3]);
+    double x = -(double)z[0] * r.w / 1920.0, y = -(double)z[1] * r.h / 1080.0;
+    r.x = x > 0 ? (u32)lround(x) : 0;
+    r.y = y > 0 ? (u32)lround(y) : 0;
+    return r;
+}
+
+bool is16x9(u32 w, u32 h) {
+    return w && h && w * 9 == h * 16;
+}
+
 Rect fitNative(u32 out_w, u32 out_h) {
     double s = fmin(out_w / 1920.0, out_h / 1080.0);
     Rect r = { 0, 0, even(1920 * s), even(1080 * s) };

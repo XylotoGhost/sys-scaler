@@ -1,27 +1,30 @@
-// aspectfixd: background sysmodule that applies the saved per-monitor profile
+// sys-scaler: background sysmodule that applies the saved per-monitor profile
 // while docked.
 //
-// Two profile methods (see common/profile.h):
-//  - zoom ("centered"): keep the stock 1920x1080 output and set the vi display
-//    magnification rect so the image is pre-squashed with bars top and bottom;
-//    the monitor's stretch to its panel makes it 16:9 again.
-//  - mode ("sharp"): switch the output to a native-aspect mode (1920x1200);
-//    vi draws the image top-aligned, bar at the bottom.
+// Profile methods (see common/profile.h):
+//  - centered: keep the stock 16:9 output (1080p or 720p) and set the vi display
+//    magnification rect so the image is pre-squashed with bars; the monitor's
+//    stretch to its panel makes it 16:9 again. Works for taller (16:10, 4:3) and
+//    wider (21:9, 32:9) panels.
+//  - sharp: switch the output to a native-aspect mode (1920x1200); vi draws the
+//    image top-aligned, bar at the bottom.
+//  - off: the monitor shows 16:9 correctly by itself; do nothing.
 //
 // Loop:
 //  - every 250 ms: omm operation mode. Handheld -> reset zoom immediately (and
 //    again after 1 s and 3 s, in case vi's own reconfiguration races us).
-//  - every 1 s while docked: read disp1 mode; (re)look up the profile by mode-DB
-//    CRC whenever the mode settled after a change, and every 3 s while none is
-//    found (docking passes through a temporary 480p state with a 13-mode DB).
-//  - zoom: sent once the base mode has been live for 1 s, then re-sent every
-//    N s (sdmc:/aspectfix/refresh.txt, default 1, 0 = never). Needed: the HOME
-//    menu startup after boot and the power menu reset it without any event we
-//    can see (run 8), and vi has no getter. mode: re-applied when reset, max 5x.
+//  - every 1 s while docked: reload config.ini if its contents changed; read the
+//    disp1 mode; (re)look up the profile by mode-DB CRC whenever the mode
+//    settled after a change, and every 3 s while none is found (docking passes
+//    through a temporary 480p state with a 13-mode DB).
+//  - centered: sent once a 16:9 mode has been live for 1 s, then re-sent every
+//    `refresh` seconds (default 1). Needed: the HOME menu startup after boot and
+//    the power menu reset it without any event we can see, and vi has no getter.
+//  - sharp: re-applied when the system resets it, max 5x in a row.
 //
-// Off switches: sdmc:/aspectfix/disabled, sdmc:/aspectfix/pause (holds modetest's
-// pid; ignored once that process is gone), or delete the profile file.
-// Log: sdmc:/aspectfix/aspectfixd.txt (appended, restarted above 128 KB).
+// Off switches: enabled=0 in config.ini, the pause file (holds the app's pid;
+// ignored once that process is gone), or deleting the profile.
+// Log: sdmc:/config/sys-scaler/log.txt (appended, restarted above 128 KB).
 
 #include <stdio.h>
 #include <string.h>
@@ -32,17 +35,16 @@
 #include "log.h"
 #include "nvsession.h"
 #include "nvdisp.h"
+#include "aspect.h"
 #include "profile.h"
+#include "settings.h"
 #include "vimag.h"
 
-#define VERSION          "0.4.0"
 #define NV_TMEM          0x8000
 #define FAST_MS          250
 #define SLOW_EVERY       4        // slow tick = every 4th fast tick (1 s)
-#define SETTLE_MS        3000     // mode profiles: let the system finish its own mode set
-#define ZOOM_SETTLE_MS   1000     // zoom profiles and profile lookup
-#define REFRESH_DEFAULT  1
-#define REFRESH_FILE     AF_DIR "/refresh.txt"
+#define SETTLE_MS        3000     // sharp: let the system finish its own mode set
+#define ZOOM_SETTLE_MS   1000     // centered and profile lookup
 #define LOOKUP_RETRY_MS  3000
 #define STICK_MS         60000
 #define MAX_APPLIES      5
@@ -93,6 +95,8 @@ static NvdcModeDB2 g_db;
 static ViMag       g_vm;
 static bool        g_zoom_active;   // we set a non-identity magnification
 static bool        g_omm_ok, g_pminfo_ok;
+static Settings    g_set;
+static u32         g_set_crc;
 
 static u64 nowMs(void) {
     return armTicksToNs(armGetSystemTick()) / 1000000ULL;
@@ -120,11 +124,14 @@ static bool ensureVi(void) {
     return true;
 }
 
-static bool zoomApply(const s32 z[4]) {
+static bool zoomApply(const s32 ref[4]) {
     if (!ensureVi()) return false;
+    s32 lw = 1920, lh = 1080, z[4];
+    vimagGetLogicalResolution(&g_vm, &lw, &lh);
+    zoomToLogical(ref, lw, lh, z);
     Result rc = vimagSet(&g_vm, z[0], z[1], z[2], z[3]);
     if (!g_zoom_active || R_FAILED(rc))
-        F("[%llu] zoom (%d,%d,%d,%d): rc 0x%x\n", T, z[0], z[1], z[2], z[3], rc);
+        F("[%llu] zoom (%d,%d,%d,%d) on %dx%d: rc 0x%x\n", T, z[0], z[1], z[2], z[3], lw, lh, rc);
     g_zoom_active = R_SUCCEEDED(rc);
     return g_zoom_active;
 }
@@ -155,17 +162,17 @@ static bool isDocked(void) {
     return m == 1;
 }
 
-// Pause/disable switches. A pause file whose modetest process is gone is
-// deleted (modetest closed via HOME never runs its cleanup).
+// Disabled, or paused by a running app test. A pause file whose app process is
+// gone is deleted (an app closed via HOME never runs its cleanup).
 static bool isIdle(void) {
-    if (fileExists(AF_DISABLE_FILE)) return true;
-    if (!fileExists(AF_PAUSE_FILE)) return false;
+    if (!g_set.enabled) return true;
+    if (!fileExists(SS_PAUSE_FILE)) return false;
     u64 pid = 0, pgid = 0;
     if (!g_pminfo_ok) g_pminfo_ok = R_SUCCEEDED(pminfoInitialize());
     bool alive = pauseReadPid(&pid) && g_pminfo_ok && R_SUCCEEDED(pminfoGetProgramId(&pgid, pid));
     if (alive) return true;
     F("[%llu] stale pause file (pid %llu gone), removing\n", T, (unsigned long long)pid);
-    unlink(AF_PAUSE_FILE);
+    unlink(SS_PAUSE_FILE);
     return false;
 }
 
@@ -184,23 +191,11 @@ typedef struct {
     u64       last_lookup;
     NvdcMode2 last;          // last observed live mode
     u64       last_change;   // when `last` started
-    u64       good_since;    // profile mode live since (0 = not live)
+    u64       good_since;    // sharp mode live since (0 = not live)
     int       applies;
     bool      gave_up;
     u64       zoom_sent;     // last zoom send (0 = not since the mode settled)
-    int       refresh_s;     // zoom re-send interval, 0 = only after events
 } Conn;
-
-// sdmc:/aspectfix/refresh.txt: zoom re-send interval in seconds (0 = off).
-// Read on every (re)connect so it can be changed without a reboot.
-static int readRefresh(void) {
-    FILE *f = fopen(REFRESH_FILE, "r");
-    if (!f) return REFRESH_DEFAULT;
-    int v = REFRESH_DEFAULT;
-    if (fscanf(f, "%d", &v) != 1 || v < 0 || v > 3600) v = REFRESH_DEFAULT;
-    fclose(f);
-    return v;
-}
 
 static void lookup(Conn *c, const NvdcMode2 *live, u64 t) {
     c->need_lookup = false;
@@ -224,13 +219,14 @@ static void lookup(Conn *c, const NvdcMode2 *live, u64 t) {
         c->gave_up = false;
     }
     F("[%llu] live %ux%u@%.2f, %u DB modes, key %08X, profile %s", T, live->hActive, live->vActive,
-      nvdcHz(live), g_db.num_modes, key, have ? (p.method == PROFILE_ZOOM ? "zoom" : "mode") : "none");
-    if (have && p.method == PROFILE_ZOOM) F(" (%d,%d,%d,%d)", p.zoom[0], p.zoom[1], p.zoom[2], p.zoom[3]);
-    if (have && p.method == PROFILE_MODE) F(" -> %ux%u", p.mode.hActive, p.mode.vActive);
+      nvdcHz(live), g_db.num_modes, key, have ? profileMethodName(p.method) : "none");
+    if (have && p.name[0]) F(" \"%s\"", p.name);
+    if (have && p.method == PROFILE_CENTERED) F(" (%d,%d,%d,%d)", p.zoom[0], p.zoom[1], p.zoom[2], p.zoom[3]);
+    if (have && p.method == PROFILE_SHARP) F(" -> %ux%u", p.mode.hActive, p.mode.vActive);
     F("\n");
 }
 
-static void tickMode(Conn *c, const NvdcMode2 *live, u64 t) {
+static void tickSharp(Conn *c, const NvdcMode2 *live, u64 t) {
     if (nvdcTimingEq(live, &c->profile.mode)) {
         if (!c->good_since) c->good_since = t;
         if (c->applies && t - c->good_since > STICK_MS) {
@@ -240,7 +236,7 @@ static void tickMode(Conn *c, const NvdcMode2 *live, u64 t) {
         return;
     }
     c->good_since = 0;
-    if (live->hActive != c->profile.base_w || live->vActive != c->profile.base_h) return;
+    if (live->hActive != 1920 || live->vActive != 1080) return;   // only from stock 1080p
     if (t - c->last_change < SETTLE_MS || c->gave_up) return;
     if (c->applies >= MAX_APPLIES) {
         F("[%llu] reset %d times in a row, giving up until reconnect\n", T, c->applies);
@@ -260,13 +256,13 @@ static void tickMode(Conn *c, const NvdcMode2 *live, u64 t) {
       c->profile.mode.vActive, c->applies, rc, g_nv.last_nv_error);
 }
 
-static void tickZoom(Conn *c, const NvdcMode2 *live, u64 t) {
-    if (live->hActive != c->profile.base_w || live->vActive != c->profile.base_h) {
-        zoomReset("not base mode", false);
+static void tickCentered(Conn *c, const NvdcMode2 *live, u64 t) {
+    if (!is16x9(live->hActive, live->vActive)) {
+        zoomReset("output not 16:9", false);
         return;
     }
     if (t - c->last_change < ZOOM_SETTLE_MS) return;
-    if (c->zoom_sent && (c->refresh_s == 0 || t - c->zoom_sent < (u64)c->refresh_s * 1000)) return;
+    if (c->zoom_sent && (g_set.refresh_s == 0 || t - c->zoom_sent < (u64)g_set.refresh_s * 1000)) return;
     if (zoomApply(c->profile.zoom)) c->zoom_sent = t;
 }
 
@@ -287,9 +283,7 @@ static void slowTick(Conn *c) {
         c->last = live;
         c->last_change = t;
         c->need_lookup = true;
-        c->refresh_s = readRefresh();
-        F("[%llu] disp1 active %ux%u@%.2f (zoom refresh %ds)\n", T, live.hActive, live.vActive,
-          nvdcHz(&live), c->refresh_s);
+        F("[%llu] disp1 active %ux%u@%.2f\n", T, live.hActive, live.vActive, nvdcHz(&live));
     }
     if (!nvdcTimingEq(&live, &c->last)) {
         F("[%llu] live mode changed to %ux%u@%.2f\n", T, live.hActive, live.vActive, nvdcHz(&live));
@@ -297,7 +291,7 @@ static void slowTick(Conn *c) {
         c->last_change = t;
         c->zoom_sent = 0;
         // A mode we set ourselves doesn't change the monitor; anything else might.
-        if (!(c->have_profile && c->profile.method == PROFILE_MODE && nvdcTimingEq(&live, &c->profile.mode)))
+        if (!(c->have_profile && c->profile.method == PROFILE_SHARP && nvdcTimingEq(&live, &c->profile.mode)))
             c->need_lookup = true;
     }
 
@@ -305,32 +299,45 @@ static void slowTick(Conn *c) {
     if ((c->need_lookup && settled) || (!c->have_profile && t - c->last_lookup >= LOOKUP_RETRY_MS))
         lookup(c, &live, t);
 
-    if (!c->have_profile) {
-        zoomReset("no profile", false);
+    if (!c->have_profile || c->profile.method == PROFILE_OFF) {
+        zoomReset("no profile / off", false);
         return;
     }
-    if (c->profile.method == PROFILE_ZOOM) tickZoom(c, &live, t);
-    else tickMode(c, &live, t);
+    if (c->profile.method == PROFILE_CENTERED) tickCentered(c, &live, t);
+    else tickSharp(c, &live, t);
 }
 
 static void openLog(void) {
     struct stat st;
-    bool append = !(stat(AF_DIR "/aspectfixd.txt", &st) == 0 && st.st_size > LOG_MAX);
-    logOpen(AF_DIR "/aspectfixd.txt", append);
+    bool append = !(stat(SS_LOG, &st) == 0 && st.st_size > LOG_MAX);
+    logOpen(SS_LOG, append);
+}
+
+// Returns true if config.ini changed (or on first call).
+static bool reloadSettings(void) {
+    u32 crc = settingsFileCrc();
+    if (crc == g_set_crc) return false;
+    g_set_crc = crc;
+    settingsLoad(&g_set);
+    F("[%llu] settings: enabled %d, refresh %ds (rev %u)\n", T, g_set.enabled, g_set.refresh_s, g_set.rev);
+    return true;
 }
 
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
-    mkdir(AF_DIR, 0777);
+    ssMkdirs();
     logSetConsole(false);
     openLog();
     u32 hv = hosversionGet();
-    F("\n=== aspectfixd " VERSION " started, HOS %u.%u.%u ===\n", HOSVER_MAJOR(hv), HOSVER_MINOR(hv),
+    F("\n=== " SS_NAME " " SS_VERSION " started, HOS %u.%u.%u ===\n", HOSVER_MAJOR(hv), HOSVER_MINOR(hv),
       HOSVER_MICRO(hv));
-    if (fileExists(AF_PAUSE_FILE)) {   // nothing can be running yet at boot
-        unlink(AF_PAUSE_FILE);
+    int migrated = settingsMigrateLegacy();
+    if (migrated >= 0) F("[%llu] first start: created config.ini, %d prototype profile(s) taken over\n", T, migrated);
+    if (fileExists(SS_PAUSE_FILE)) {   // nothing can be running yet at boot
+        unlink(SS_PAUSE_FILE);
         F("[%llu] removed leftover pause file\n", T);
     }
+    reloadSettings();
 
     Conn c = {0};
     bool was_docked = true, was_idle = false;
@@ -356,14 +363,15 @@ int main(int argc, char **argv) {
         was_docked = docked;
 
         if (docked && n % SLOW_EVERY == 0) {
+            if (reloadSettings()) c.connected = false;   // the app changed settings or a profile
             bool idle = isIdle();
             if (idle) {
-                if (!was_idle) F("[%llu] paused/disabled\n", T);
+                if (!was_idle) F("[%llu] %s\n", T, g_set.enabled ? "paused by app" : "disabled");
                 zoomReset("paused/disabled", false);
             } else {
                 if (was_idle) {
                     F("[%llu] resumed\n", T);
-                    c.connected = false;   // modetest may have saved or deleted a profile
+                    c.connected = false;   // the app may have saved or deleted a profile
                 }
                 slowTick(&c);
             }
