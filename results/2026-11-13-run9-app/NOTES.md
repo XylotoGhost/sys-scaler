@@ -4,7 +4,7 @@ Moritz: "all looks great so far". The one bug: after setting up, the menu still 
 
 Screenshots (captured before magnification, so the circle looks round in them):
 - The UI renders correctly with the system font.
-- The Nintendo button glyphs work: `` A, `` B, `` X, `` +.
+- The Nintendo button glyphs work: A (U+E0E0), B (U+E0E1), X (U+E0E2), + (U+E0EF).
 - The wizard screens look as designed.
 
 Logs:
