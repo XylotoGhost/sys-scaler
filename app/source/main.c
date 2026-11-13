@@ -251,6 +251,12 @@ static void saveTested(void) {
     bool ok = profileSave(g_hw.key, &g_test);
     F("save profile %08X %s: %s\n", g_hw.key, profileMethodName(g_test.method), ok ? "ok" : "FAILED");
     leaveTestMode();
+    // Setting up a monitor means the user wants the fix: turn the master switch
+    // on, otherwise the confirmed picture stays on screen while the service is off.
+    if (ok && g_test.method != PROFILE_OFF && !g_set.enabled) {
+        g_set.enabled = true;
+        F("picture fix turned on by setup\n");
+    }
     saveSettings();   // bump rev so the service re-reads at once
     refreshStatus(true);
     draftFromProfile();
